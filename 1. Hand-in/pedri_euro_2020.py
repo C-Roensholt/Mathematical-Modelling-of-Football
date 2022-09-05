@@ -56,6 +56,10 @@ df_player_passes = df_all_events.loc[mask_player]
 # CALCULATE DIFFERENT PASS TYPES
 # shot assist
 df_player_shot_assist = df_player_passes[df_player_passes["pass_shot_assist"]==True]
+# merge to get shot info
+df_shot_assist = df_player_shot_assist.merge(df_all_events,
+                                             left_on="id", right_on="shot_key_pass_id",
+                                             how="left", suffixes=["", "_shot"])
 # deep completions
 df_deep_completions = calculate_deep_completions(df_player_passes)
 # progressive passes
@@ -71,8 +75,6 @@ mask_penalty_area = ((df_player_passes.end_x >= 100) &
                      (df_player_passes.end_y.between(18, 62)))
 df_penalty_area = df_player_passes.loc[mask_penalty_area]
 
-
-
 ## --------- PLOT PLAYER PASSES --------- ##
 # create colormap
 soc_cm = mcolors.LinearSegmentedColormap.from_list('SOC', gradient, N=50)
@@ -82,26 +84,28 @@ norm = mcolors.Normalize(vmin=0,
 cmap = plt.get_cmap('Reds')
 
 # draw pitch
-pitch = Pitch(line_color="black")
 vert_pitch = VerticalPitch(line_color="black", half=True)
 
 fig, ax = plt.subplots(figsize=(14,10))
 
 ## -------- PLOT FINAL THIRD AND INTO PENALTY BOX PASSES (PITCH A)-------- ##
 vert_pitch.draw(ax=ax)
-# get the 2D histogram
-bin_statistic = vert_pitch.bin_statistic(df_prog_passes.x, df_prog_passes.y,
-                                         statistic="count", bins=(6, 5), normalize=True)
-# make a heatmap
-pcm  = vert_pitch.heatmap(bin_statistic, cmap="Reds", edgecolor="k",
-                          zorder=-2, ax=ax, lw=3, ls="--")
-
-vert_pitch.scatter(df_prog_passes.x, df_prog_passes.y, ax=ax,
-                   s=250, color="k", alpha=0.2, zorder=1)
-labels = vert_pitch.label_heatmap(bin_statistic, color='#f4edf0', fontsize=22,
-                                  ax=ax, ha='center', va='center',
-                                  str_format='{:.0%}')  
-
+# (remove shot assists from prog passes)
+df_prog_passes = df_prog_passes[~(df_prog_passes.id.isin(df_player_shot_assist.id))]
+# plot progressive passes
+vert_pitch.lines(df_prog_passes.x, df_prog_passes.y,
+                 df_prog_passes.end_x, df_prog_passes.end_y,
+                 color = "k", ax=ax, comet=True, alpha=0.2, lw=12)
+vert_pitch.scatter(df_prog_passes.end_x, df_prog_passes.end_y, ax=ax,
+                   s = 500, color = "grey", edgecolor="k", lw=2,
+                   zorder=3)
+# highlight shot assists
+vert_pitch.lines(df_shot_assist.x, df_shot_assist.y,
+                 df_shot_assist.end_x, df_shot_assist.end_y,
+                 color = "r", ax=ax, comet=True, lw=12, zorder=4)
+vert_pitch.scatter(df_shot_assist.end_x, df_shot_assist.end_y, ax=ax,
+                   alpha = 1, color = "r", edgecolor="k", lw=2,
+                   zorder=5, s= df_shot_assist["shot_statsbomb_xg_shot"]*5000)
 ## ------- PLOT PERCENTILE RANKING (B) ----------- ##
 mpl.rcParams['font.family'] = 'Alegreya Sans'
 
@@ -144,13 +148,13 @@ label_nums = []
 for i, (x, bar, rotation, label, strlab) in enumerate(zip(theta, bars, rotations, passing_names, strvals)):
     if i==0 or i==2 or i==6:
         lab = ax_polar.text(x, 122, label,ha='center', va='center', color="k",
-                            fontsize=20, fontweight='regular')
+                            fontsize=20, fontweight='bold')
     elif i==11:
         lab = ax_polar.text(x, 132, label,ha='center', va='center', color="k",
-                            fontsize=20, fontweight='regular')
+                            fontsize=20, fontweight='bold')
     else:
         label_text = ax_polar.text(x, 128, label, ha='center', va='center_baseline', color="k",
-                                   fontsize=20, fontweight='regular')
+                                   fontsize=20, fontweight='bold')
     
     # Add percentile numbers and adjust colors dependend on category
     label_number = ax_polar.text(x, bar.get_height(), strlab, ha='center', va='center', color='w',
@@ -168,6 +172,22 @@ ax_polar.grid(b=True, axis='x', zorder=20, color='k', linewidth=4)
 ax_polar.grid(b=True, axis='y', zorder=20, color='k', linestyle=(0, (5, 10)), linewidth=0.8)
 ax_polar.spines['polar'].set_visible(True)
 ax_polar.set_yticklabels([])
+
+# Add global title
+fig.text(x=0.9, y=1.3, ha="center",
+         s="Pedri - Passing Profile",
+         fontweight="bold", fontsize=52)
+fig.text(x=0.9, y=1.225, ha="center",
+         s="EURO 2020",
+         fontweight="regular", fontsize=36)
+# subtitle to pass map
+fig.text(x=0.5, y=1.1, ha="center",
+         s="Pass map",
+         fontweight="bold", fontsize=42)
+# subtitle to radar
+fig.text(x=1.3, y=1.1, ha="center",
+         s="Passing Ranking",
+         fontweight="bold", fontsize=42)
 
 fig.tight_layout()
 
