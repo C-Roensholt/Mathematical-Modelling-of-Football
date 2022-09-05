@@ -1,4 +1,5 @@
 #%%
+from collections import defaultdict
 import numpy as np
 import pandas as pd
 from mplsoccer import Pitch, VerticalPitch, Sbopen, PyPizza
@@ -89,14 +90,17 @@ df_all_events['team_mask'] = df_all_events['team_name'] != df_all_events['team_n
 df_all_events['team_groups'] = df_all_events['team_mask'].cumsum()
 
 # collect xg in sequences where pedri is involved
-pedri_xg = 0
+xg_chain_dict = {}
 for idx in shots_idxs:
     #access the shot sequence/group
     shot_sequence_group = df_all_events.loc[idx, :]['team_groups']
     df_shot_sequence = df_all_events[df_all_events['team_groups'] == shot_sequence_group]
     
-    if player in list(df_shot_sequence["player_name"]):
-        pedri_xg += df_shot_sequence["shot_statsbomb_xg"].sum()
+    for player in list(df_shot_sequence["player_name"]):
+        if player not in xg_chain_dict:
+            xg_chain_dict[player] = df_shot_sequence["shot_statsbomb_xg"].sum()
+        else:
+            xg_chain_dict[player] += df_shot_sequence["shot_statsbomb_xg"].sum()
 
 total_xg = df_all_shots["shot_statsbomb_xg"].sum()
 
