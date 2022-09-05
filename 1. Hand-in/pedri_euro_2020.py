@@ -44,7 +44,7 @@ df_all_games = []
 for match_id in match_ids:
     df_event, df_related, df_freeze, df_tactics = parser.event(match_id)
     df_all_games.append(df_event)
-df_all_events = pd.concat(df_all_games)
+df_all_events = pd.concat(df_all_games).reset_index()
 
 # Filter for passes by the player (accurate and not set pieces)
 mask_player = ((df_all_events.player_name == player) &
@@ -75,6 +75,32 @@ mask_penalty_area = ((df_player_passes.end_x >= 100) &
                      (df_player_passes.end_y.between(18, 62)))
 df_penalty_area = df_player_passes.loc[mask_penalty_area]
 
+# CALCULATE TOTAL xG FOR SPAIN AND xCHAIN FOR PEDRI
+mask_shot = ((df_all_events.team_name == team) &
+             (df_all_events.type_name == "Shot") &
+             (df_all_events.sub_type_name != "Penalty") &
+             (df_all_events.sub_type_name != "Penalty Saved") &
+             (df_all_events.sub_type_name == "Open Play"))
+df_all_shots = df_all_events.loc[mask_shot]
+shots_idxs = list(df_all_shots.index)
+# create groups based on team sequences of possession
+df_all_events['team_name_1'] = df_all_events['team_name'].shift(1)
+df_all_events['team_mask'] = df_all_events['team_name'] != df_all_events['team_name_1']
+df_all_events['team_groups'] = df_all_events['team_mask'].cumsum()
+
+# collect xg in sequences where pedri is involved
+pedri_xg = 0
+for idx in shots_idxs:
+    #access the shot sequence/group
+    shot_sequence_group = df_all_events.loc[idx, :]['team_groups']
+    df_shot_sequence = df_all_events[df_all_events['team_groups'] == shot_sequence_group]
+    
+    if player in list(df_shot_sequence["player_name"]):
+        pedri_xg += df_shot_sequence["shot_statsbomb_xg"].sum()
+
+total_xg = df_all_shots["shot_statsbomb_xg"].sum()
+
+#%%
 ## --------- PLOT PLAYER PASSES --------- ##
 # create colormap
 soc_cm = mcolors.LinearSegmentedColormap.from_list('SOC', gradient, N=50)
@@ -82,11 +108,13 @@ cm.register_cmap(name='SOC', cmap=soc_cm)
 norm = mcolors.Normalize(vmin=0,
                          vmax=1)
 cmap = plt.get_cmap('Reds')
+mpl.rcParams['font.family'] = 'Alegreya Sans'
 
 # draw pitch
-vert_pitch = VerticalPitch(line_color="black", half=True)
-
+vert_pitch = VerticalPitch(line_color="black", half=True, pitch_color="#efe9e6")
 fig, ax = plt.subplots(figsize=(14,10))
+
+fig.set_facecolor("#efe9e6")
 
 ## -------- PLOT FINAL THIRD AND INTO PENALTY BOX PASSES (PITCH A)-------- ##
 vert_pitch.draw(ax=ax)
@@ -106,9 +134,15 @@ vert_pitch.lines(df_shot_assist.x, df_shot_assist.y,
 vert_pitch.scatter(df_shot_assist.end_x, df_shot_assist.end_y, ax=ax,
                    alpha = 1, color = "r", edgecolor="k", lw=2,
                    zorder=5, s= df_shot_assist["shot_statsbomb_xg_shot"]*5000)
+# get the 2D histogram
+bin_statistic = vert_pitch.bin_statistic(df_shot_assist.end_x, df_shot_assist.end_y,
+                                         statistic='count', bins=(6, 5), normalize=False)
+# normalize by number of games
+bin_statistic["statistic"] = bin_statistic["statistic"] / no_games
+# make a heatmap
+pcm  = vert_pitch.heatmap(bin_statistic, cmap="Reds", edgecolor="grey",
+                          ax=ax, zorder=-2, lw=3)
 ## ------- PLOT PERCENTILE RANKING (B) ----------- ##
-mpl.rcParams['font.family'] = 'Alegreya Sans'
-
 # setup variables
 pvals = [x * 100 for x in df_fbref_percentile_player.values] #multiply to get 0-100 scale
 arr1 = np.asarray(pvals)
@@ -119,7 +153,7 @@ theta, width = np.linspace(0.0, 2 * np.pi, N, endpoint=False, retstep=True)
 # add ax for radar
 ax_polar = fig.add_axes([0.9, 0.15, 0.8, 0.8], polar=True)
 ax_polar.set_rorigin(-20)
-
+ax_polar.set_facecolor("#efe9e6")
 # plot bars
 bars = ax_polar.bar(
     theta, height=arr1, width=width,
@@ -135,9 +169,6 @@ ax_polar.set_thetagrids((theta+width/2)* 180 / np.pi)
 # axes["B"].set_rlabel_position(-100)
 ax_polar.set_theta_zero_location("N")
 ax_polar.set_theta_direction(-1)
-
-# axes["B"].set_rticks([])
-# ticks = [str(i+1) for i in range(len(pvals))]
 
 strvals = [str(round(pvals[i])) for i in range(len(pvals))]
 ax_polar.set_xticklabels([])
