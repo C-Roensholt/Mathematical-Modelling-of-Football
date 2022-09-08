@@ -1,20 +1,20 @@
 #%%
-from collections import defaultdict
 import numpy as np
 import pandas as pd
-from mplsoccer import Pitch, VerticalPitch, Sbopen, PyPizza
-import matplotlib.patches as patches
-import matplotlib.pyplot as plt
+import networkx as nx
 import matplotlib as mpl
-import matplotlib.colors as mcolors
-from matplotlib import cm
+import matplotlib.pyplot as plt
+from highlight_text import ax_text, fig_text
+from mplsoccer import Pitch, VerticalPitch, Sbopen
+
 
 from utils.metadata import (gradient,
                             passing_columns,
                             passing_names,
                             radius)
 from utils.utility_functions import (calculate_deep_completions,
-                                     calculate_progressive_passes)
+                                     calculate_progressive_passes,
+                                     draw_arrow_with_shrink)
 
 # choose team and player
 team = "Spain"
@@ -23,17 +23,6 @@ player = "Pedro González López"
 # Load StatsBomb data
 parser = Sbopen()
 df_competition = parser.match(competition_id=55, season_id=43)
-
-# Load Fbref data
-df_pass_types = pd.read_csv("data/pass_types.csv", skiprows=1)
-df_passing = pd.read_csv("data/passing.csv")
-df_fbref = pd.merge(df_pass_types, df_passing,
-                    on=["Player", "Pos", "Squad", "Age", "Born"]).set_index("Player")[passing_columns]
-# calculate percentile
-df_fbref_percentile = df_fbref.rank(pct=True, axis=0, numeric_only=True)
-
-df_fbref_player = df_fbref.loc[("Pedri")]
-df_fbref_percentile_player = df_fbref_percentile.loc[("Pedri")]
 
 # get list of games by our team, either home or away
 match_ids = df_competition.loc[(df_competition["home_team_name"] == team) | (df_competition["away_team_name"] == team)]["match_id"].tolist()
@@ -89,7 +78,7 @@ df_all_events['team_name_1'] = df_all_events['team_name'].shift(1)
 df_all_events['team_mask'] = df_all_events['team_name'] != df_all_events['team_name_1']
 df_all_events['team_groups'] = df_all_events['team_mask'].cumsum()
 
-# collect xg in sequences where pedri is involved
+# collect xg in sequences for all players
 xg_chain_dict = {}
 for idx in shots_idxs:
     #access the shot sequence/group
@@ -105,13 +94,94 @@ for idx in shots_idxs:
 total_xg = df_all_shots["shot_statsbomb_xg"].sum()
 
 #%%
+# CALCULATE PASSING NETWORK
+
+# load match data
+min_num_passes = 4
+schwiz_vs_spain = 3795108
+slovakia_vs_spain = 3788775
+sweden_vs_spain = 3788750
+croatia_vs_spain = 3794686
+italy_vs_spain = 3795220
+parser = Sbopen()
+df, related, freeze, tactics = parser.event(italy_vs_spain)
+
+# check for index of first sub
+sub = df.loc[df["type_name"] == "Substitution"].loc[df["team_name"] == team].iloc[0]["index"]
+sub_time = df.loc[df["type_name"] == "Substitution"].loc[df["team_name"] == team].iloc[0]["minute"]
+# make df with successfull passes by England until the first substitution
+mask_team = ((df.type_name == 'Pass') &
+                (df.team_name == team) &
+                (df.index < sub) & (df.outcome_name.isnull()) &
+                (df.sub_type_name != "Throw-in"))
+# taking necessary columns
+df_pass = df.loc[mask_team, ['x', 'y', 'end_x', 'end_y', "player_name", "pass_recipient_name"]]
+# adjusting that only the surname of a player is presented.
+# df_pass["player_name"] = df_pass["player_name"].apply(lambda x: str(x).split()[-1])
+# df_pass["pass_recipient_name"] = df_pass["pass_recipient_name"].apply(lambda x: str(x).split()[-1])
+
+# calculate average location of passes and pass receptions
+scatter_df = pd.DataFrame()
+for i, name in enumerate(df_pass["player_name"].unique()):
+    passx = df_pass.loc[df_pass["player_name"] == name]["x"].to_numpy()
+    recx = df_pass.loc[df_pass["pass_recipient_name"] == name]["end_x"].to_numpy()
+    passy = df_pass.loc[df_pass["player_name"] == name]["y"].to_numpy()
+    recy = df_pass.loc[df_pass["pass_recipient_name"] == name]["end_y"].to_numpy()
+    scatter_df.at[i, "player_name"] = name
+    #make sure that x and y location for each circle representing the player is the average of passes and receptions
+    scatter_df.at[i, "x"] = np.mean(np.concatenate([passx, recx]))
+    scatter_df.at[i, "y"] = np.mean(np.concatenate([passy, recy]))
+    #calculate number of passes
+    scatter_df.at[i, "no"] = df_pass.loc[df_pass["player_name"] == name].count().iloc[0]
+
+#adjust the size of a circle so that the player who made more passes
+scatter_df['marker_size'] = (scatter_df['no'] / scatter_df['no'].max() * 1500)
+
+#counting passes between players
+lines_df = df_pass.groupby(['player_name', 'pass_recipient_name']).x.count().reset_index()
+lines_df.rename({'x':'pass_count'}, axis='columns', inplace=True)
+#setting a threshold. You can try to investigate how it changes when you change it.
+lines_df = lines_df[lines_df['pass_count'] > min_num_passes]
+
+# calculate normalized pass count
+column = "pass_count"
+lines_df["pass_count_norm"] = (lines_df[column] - lines_df[column].min()) / (lines_df[column].max() - lines_df[column].min())    
+lines_df.replace({'pass_count_norm': {0: 0.05}}, inplace=True)
+
+
+## --------- CALCULATE CENTRALIZATION ------------ ##
+# calculate number of successful passes by player
+no_passes = df_pass.groupby(['player_name']).x.count().reset_index()
+no_passes.rename({'x':'pass_count'}, axis='columns', inplace=True)
+# find one who made most passes
+max_no = no_passes["pass_count"].max()
+# calculate the denominator - 10*the total sum of passes
+denominator = 10*no_passes["pass_count"].sum()
+# calculate the nominator
+nominator = (max_no - no_passes["pass_count"]).sum()
+# calculate the centralisation index
+centralisation_index = nominator/denominator
+print("Centralisation index is ", centralisation_index)
+
+
+## --------- CALCULATE CENTRALIZATION FOR EACH PLAYER ------------- ##
+#create list of nodes
+nodes_final = list(lines_df["player_name"].unique())
+edges_final = list(lines_df[["player_name", "pass_recipient_name", "pass_count"]].itertuples(index=False, name=None)) #create list of tuples (https://stackoverflow.com/questions/9758450/pandas-convert-dataframe-to-array-of-tuples)
+#construct graph
+g = nx.DiGraph()
+g.add_nodes_from(nodes_final)
+g.add_weighted_edges_from(edges_final)
+
+#calculate betweeness centrality
+between_centrality = nx.betweenness_centrality(g, weight='weight', normalized=True, endpoints=True)
+centrality_df = pd.DataFrame(between_centrality.items(), columns=["player_name", "centrality"])
+
+# merge with og dataframe
+df_final = scatter_df.merge(centrality_df, on="player_name")
+
+
 ## --------- PLOT PLAYER PASSES --------- ##
-# create colormap
-soc_cm = mcolors.LinearSegmentedColormap.from_list('SOC', gradient, N=50)
-cm.register_cmap(name='SOC', cmap=soc_cm)
-norm = mcolors.Normalize(vmin=0,
-                         vmax=1)
-cmap = plt.get_cmap('Reds')
 mpl.rcParams['font.family'] = 'Alegreya Sans'
 
 # draw pitch
@@ -120,7 +190,7 @@ fig, ax = plt.subplots(figsize=(14,10))
 
 fig.set_facecolor("#efe9e6")
 
-## -------- PLOT FINAL THIRD AND INTO PENALTY BOX PASSES (PITCH A)-------- ##
+## -------- PLOT PROG AND SHOT ASSISTS -------- ##
 vert_pitch.draw(ax=ax)
 # (remove shot assists from prog passes)
 df_prog_passes = df_prog_passes[~(df_prog_passes.id.isin(df_player_shot_assist.id))]
@@ -138,94 +208,85 @@ vert_pitch.lines(df_shot_assist.x, df_shot_assist.y,
 vert_pitch.scatter(df_shot_assist.end_x, df_shot_assist.end_y, ax=ax,
                    alpha = 1, color = "r", edgecolor="k", lw=2,
                    zorder=5, s= df_shot_assist["shot_statsbomb_xg_shot"]*5000)
-# get the 2D histogram
-bin_statistic = vert_pitch.bin_statistic(df_shot_assist.end_x, df_shot_assist.end_y,
-                                         statistic='count', bins=(6, 5), normalize=False)
-# normalize by number of games
-bin_statistic["statistic"] = bin_statistic["statistic"] / no_games
-# make a heatmap
-pcm  = vert_pitch.heatmap(bin_statistic, cmap="Reds", edgecolor="grey",
-                          ax=ax, zorder=-2, lw=3)
-## ------- PLOT PERCENTILE RANKING (B) ----------- ##
-# setup variables
-pvals = [x * 100 for x in df_fbref_percentile_player.values] #multiply to get 0-100 scale
-arr1 = np.asarray(pvals)
-N = len(pvals)
-bottom = 0.0
-theta, width = np.linspace(0.0, 2 * np.pi, N, endpoint=False, retstep=True)
-
-# add ax for radar
-ax_polar = fig.add_axes([0.9, 0.15, 0.8, 0.8], polar=True)
-ax_polar.set_rorigin(-20)
-ax_polar.set_facecolor("#efe9e6")
-# plot bars
-bars = ax_polar.bar(
-    theta, height=arr1, width=width,
-    bottom=bottom, color="w", edgecolor="k", zorder=1, linewidth=4
-)
-# color different bars
-for i, bar in enumerate(bars):
-    bar.set_color(cmap(norm(df_fbref_percentile_player.values[i])))
-    bar.set_edgecolor('k')
-
-ax_polar.set_rticks(np.arange(0.0, 120.0, 20.0))
-ax_polar.set_thetagrids((theta+width/2)* 180 / np.pi)
-# axes["B"].set_rlabel_position(-100)
-ax_polar.set_theta_zero_location("N")
-ax_polar.set_theta_direction(-1)
-
-strvals = [str(round(pvals[i])) for i in range(len(pvals))]
-ax_polar.set_xticklabels([])
-rotations = np.rad2deg(theta)
-
-# Plot name and percentile labels
-label_nums = []
-for i, (x, bar, rotation, label, strlab) in enumerate(zip(theta, bars, rotations, passing_names, strvals)):
-    if i==0 or i==2 or i==6:
-        lab = ax_polar.text(x, 122, label,ha='center', va='center', color="k",
-                            fontsize=20, fontweight='bold')
-    elif i==11:
-        lab = ax_polar.text(x, 132, label,ha='center', va='center', color="k",
-                            fontsize=20, fontweight='bold')
-    else:
-        label_text = ax_polar.text(x, 128, label, ha='center', va='center_baseline', color="k",
-                                   fontsize=20, fontweight='bold')
-    
-    # Add percentile numbers and adjust colors dependend on category
-    label_number = ax_polar.text(x, bar.get_height(), strlab, ha='center', va='center', color='w',
-                                 fontsize=20, zorder=5, fontweight='bold',
-                                 bbox=dict(boxstyle='round', facecolor=cmap(norm(df_fbref_percentile_player.values[i])), alpha=1, edgecolor='k', linewidth=4))
-    
-    label_nums.append(label_number)
-    
-# Format spines
-ax_polar.spines["polar"].set_color('k')
-ax_polar.spines["polar"].set_linewidth(4)
-
-# Grid inside plot
-ax_polar.grid(b=True, axis='x', zorder=20, color='k', linewidth=4)
-ax_polar.grid(b=True, axis='y', zorder=20, color='k', linestyle=(0, (5, 10)), linewidth=0.8)
-ax_polar.spines['polar'].set_visible(True)
-ax_polar.set_yticklabels([])
 
 # Add global title
-fig.text(x=0.9, y=1.3, ha="center",
-         s="Pedri - Passing Profile",
-         fontweight="bold", fontsize=52)
-fig.text(x=0.9, y=1.225, ha="center",
-         s="EURO 2020",
-         fontweight="regular", fontsize=36)
+fig.text(x=0.5, y=0.98, ha="center",
+         s="Pedri - EURO 2020",
+         fontweight="bold", fontsize=42)
 # subtitle to pass map
-fig.text(x=0.5, y=1.1, ha="center",
-         s="Pass map",
-         fontweight="bold", fontsize=42)
-# subtitle to radar
-fig.text(x=1.3, y=1.1, ha="center",
-         s="Passing Ranking",
-         fontweight="bold", fontsize=42)
+fig_text(x=0.5, y=0.94, s="All <Progressive passes> and <Shot assists>",
+         fontsize=26, ha="center",
+         highlight_textprops=[{"color": "grey"},
+                              {"color": "r"}])
 
-fig.tight_layout()
+## PLOT PASSING NETWORK ##
+bg = "#181818"
+text_color = "#CECECD"
+arrow_shift = 2.5
 
-# legend to our plot
-# ax_cbar = fig.add_axes([0.9, 0.15, 0.1, 0.8])
-# cbar = plt.colorbar(cm.ScalarMappable(norm=norm, cmap="Reds"), cax=ax_cbar)
+pitch = Pitch(line_color='grey')
+fig, ax = pitch.grid(grid_height=0.9, title_height=0.06, axis=False,
+                     endnote_height=0.04, title_space=0, endnote_space=0)
+
+
+#plot pass arrows
+for i, row in lines_df.iterrows():
+    player1 = row["player_name"]
+    player2 = row['pass_recipient_name']
+    #take the average location of players to plot a line between them
+    player1_x = scatter_df.loc[scatter_df["player_name"] == player1]['x'].iloc[0]
+    player1_y = scatter_df.loc[scatter_df["player_name"] == player1]['y'].iloc[0]
+    player2_x = scatter_df.loc[scatter_df["player_name"] == player2]['x'].iloc[0]
+    player2_y = scatter_df.loc[scatter_df["player_name"] == player2]['y'].iloc[0]
+    num_passes = row["pass_count"]
+    pass_count_norm = row["pass_count_norm"]
+    
+    if abs(player2_x - player1_x) > abs(player2_y - player1_y):
+
+        if player1 > player2:
+            draw_arrow_with_shrink(ax=ax["pitch"], x=player1_x, y=player1_y + arrow_shift,
+                       end_x=player2_x, end_y=player2_y,
+                       lw=3, line_color='k', 
+                       alpha=pass_count_norm, dist_delta=4)
+
+        elif player2 > player1:
+            draw_arrow_with_shrink(ax=ax["pitch"], x=player1_x, y=player1_y - arrow_shift,
+                       end_x=player2_x, end_y=player2_y,
+                       lw=3, line_color='k', 
+                       alpha=pass_count_norm, dist_delta=4)
+
+    elif abs(player2_x - player1_x) <= abs(player2_y - player1_y):
+
+        if player1 > player2:
+             draw_arrow_with_shrink(ax=ax["pitch"], x=player1_x + arrow_shift, y=player1_y,
+                       end_x=player2_x, end_y=player2_y,
+                       lw=3, line_color='k', 
+                       alpha=pass_count_norm, dist_delta=4)
+        
+        elif player2 > player1:
+            draw_arrow_with_shrink(ax=ax["pitch"], x=player1_x - arrow_shift, y=player1_y,
+                       end_x=player2_x, end_y=player2_y,
+                       lw=3, line_color='k', 
+                       alpha=pass_count_norm, dist_delta=4)
+
+#plot the nodes
+nodes = ax["pitch"].scatter(scatter_df.x, scatter_df.y,
+                   s=scatter_df.marker_size, color='red', edgecolor='k', 
+                   linewidth=2.5, alpha=1, zorder=3)
+for i, row in scatter_df.iterrows():
+    pitch.annotate(row.player_name, xy=(row.x, row.y),
+                   c='black', va='center', ha='center',
+                   weight = "bold", size=16, ax=ax["pitch"], zorder = 4)
+
+# title etc.
+# title
+fig.text(x=0.5, y=1, ha="center",
+         fontsize=42, fontweight="bold",
+         s="Spain passing network")
+fig.text(x=0.5,y=0.94, ha="center",
+         fontsize=24, fontweight="regular",
+         s="Spain vs. Italy | Semi-final | EURO 2020")
+
+# corner text
+fig.text(x=0.85, y=0, ha="left", fontsize=12,# fonweight="italic",
+         s=f"*until first sub at {sub_time} min.\n*min. {min_num_passes} number of passes")
