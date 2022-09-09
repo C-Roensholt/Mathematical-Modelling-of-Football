@@ -161,7 +161,6 @@ denominator = 10*no_passes["pass_count"].sum()
 nominator = (max_no - no_passes["pass_count"]).sum()
 # calculate the centralisation index
 centralisation_index = nominator/denominator
-print("Centralisation index is ", centralisation_index)
 
 
 ## --------- CALCULATE CENTRALIZATION FOR EACH PLAYER ------------- ##
@@ -180,15 +179,15 @@ centrality_df = pd.DataFrame(between_centrality.items(), columns=["player_name",
 # merge with og dataframe
 df_final = scatter_df.merge(centrality_df, on="player_name")
 
-
+#%%
 ## --------- PLOT PLAYER PASSES --------- ##
 mpl.rcParams['font.family'] = 'Alegreya Sans'
 
 # draw pitch
-vert_pitch = VerticalPitch(line_color="black", half=True, pitch_color="#efe9e6")
+vert_pitch = VerticalPitch(line_color="black", half=True, pitch_color="w")
 fig, ax = plt.subplots(figsize=(14,10))
 
-fig.set_facecolor("#efe9e6")
+fig.set_facecolor("w")
 
 ## -------- PLOT PROG AND SHOT ASSISTS -------- ##
 vert_pitch.draw(ax=ax)
@@ -210,12 +209,12 @@ vert_pitch.scatter(df_shot_assist.end_x, df_shot_assist.end_y, ax=ax,
                    zorder=5, s= df_shot_assist["shot_statsbomb_xg_shot"]*5000)
 
 # Add global title
-fig.text(x=0.5, y=0.98, ha="center",
+fig.text(x=0.5, y=0.92, ha="center",
          s="Pedri - EURO 2020",
          fontweight="bold", fontsize=42)
 # subtitle to pass map
-fig_text(x=0.5, y=0.94, s="All <Progressive passes> and <Shot assists>",
-         fontsize=26, ha="center",
+fig_text(x=0.5, y=0.9, s="All <Progressive passes> and <Shot assists>",
+         fontsize=24, ha="center",
          highlight_textprops=[{"color": "grey"},
                               {"color": "r"}])
 
@@ -228,6 +227,7 @@ pitch = Pitch(line_color='grey')
 fig, ax = pitch.grid(grid_height=0.9, title_height=0.06, axis=False,
                      endnote_height=0.04, title_space=0, endnote_space=0)
 
+fig.set_facecolor("w")
 
 #plot pass arrows
 for i, row in lines_df.iterrows():
@@ -288,5 +288,5 @@ fig.text(x=0.5,y=0.94, ha="center",
          s="Spain vs. Italy | Semi-final | EURO 2020")
 
 # corner text
-fig.text(x=0.85, y=0, ha="left", fontsize=12,# fonweight="italic",
+fig.text(x=0.8, y=0, ha="left", fontsize=14, fontstyle="italic",
          s=f"*until first sub at {sub_time} min.\n*min. {min_num_passes} number of passes")
