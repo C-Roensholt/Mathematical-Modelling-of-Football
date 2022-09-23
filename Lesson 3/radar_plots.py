@@ -17,3 +17,9 @@ from utility_functions import calulatexG, FinalThird
 with open("../data/wyscout/events/events_England.json") as f:
     data = json.load(f)
 train = pd.DataFrame(data)
+
+# calculate xG
+npxg = calulatexG(train, npxG = True)
+
+# calculate final third entries
+final_third = FinalThird(train)
