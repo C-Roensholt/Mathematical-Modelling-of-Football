@@ -282,3 +282,8 @@ summary = summary.merge(percentage_df, how = "left", on = ["playerId"])
 
 summary["xT_adjusted_per_90"] = (summary["xT_added"]/summary["possesion"])*90/summary["minutesPlayed"]
 summary[['shortName', 'xT_adjusted_per_90']].sort_values(by='xT_adjusted_per_90', ascending=False).head(5)
+
+## Challenge ##
+# 1. Write the Calculating Expected Threat matrix section using for loops to get a better understanding of the algorithm!
+
+# 2. Don't remove unsuccessful and non-progressive actions. Assign -xT for unsuccessful ones!
