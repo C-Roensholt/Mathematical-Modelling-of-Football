@@ -37,27 +37,27 @@ for i in range(3):
     num_goals = 0
 
     print('---------------')
-    print('Start from ' + description[i] )
+    print('Start from ' + description[i])
     print('---------------')
 
     for n in range(num_sims):
 
-        ballinplay=True
+        ballinplay = True
         #Initial state is i
         s = i
-        describe_possession=''
+        describe_possession = ''
 
         while ballinplay:
-            r=np.random.rand()
+            r = np.random.rand()
 
             # Make commentary text
             describe_possession = describe_possession + ' - ' + description[s]
 
 
             #Cumulative sum of in play probabilities
-            c_sum=np.cumsum(A[s,:])
-            new_s = np.sum(r>c_sum)
-            if new_s>2:
+            c_sum = np.cumsum(A[s, :])
+            new_s = np.sum(r > c_sum)
+            if new_s > 2:
                 #Ball is either goal or out of play
                 ballinplay=False
                 if r < g[s] + c_sum[0,2]:
