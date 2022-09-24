@@ -88,7 +88,7 @@ fig, ax = pitch.grid(grid_height=0.9, title_height=0.06, axis=False,
                      endnote_height=0.04, title_space=0, endnote_space=0)
 #passes
 pitch.arrows(passes.x0, passes.y0,
-            passes.x1, passes.y1, color = "blue", ax=ax['pitch'], zorder =  3)
+             passes.x1, passes.y1, color = "blue", ax=ax['pitch'], zorder =  3)
 #shot
 pitch.arrows(shot.x0, shot.y0,
              shot.x1, shot.y1, color = "red", ax=ax['pitch'], zorder =  3)
