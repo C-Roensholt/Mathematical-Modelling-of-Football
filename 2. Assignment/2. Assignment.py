@@ -1,18 +1,15 @@
 # 2. Assignment
+# Christian Rønsholt
 #####################################################
 
-# Context for Arsenal summer 2018
-# Arsenal underperformed in the season.
-# It is Wengers last season.
-# Unai Emery takes charge.
-# Bellerin played a lot of minutes -> Spanish conenction with Emery
-# In the Europa League (first season out of Champions League) -> squad depth
-# Big squad overhaul.
-# No CB made it past 25 games
-# LOOK AT CONTRACT LENGTHS
+# Data can be stored in the same folder as the script
+# The files required to run the script are:
+# 1. wyscout event data from all 5 leagues (events_England.json etc.)
+# 2. wyscout player data -> players.json
+# 3. minutes played per game for all 5 leagues (minutes_played_per_game_England etc.)
 
-# CB -> Mustafi and Holding arrived in summer 2017 (replacement for Koscienly)
-# LB -> Monreal in the club since 2012 and old
+# The code to add logos to the radars are commented out as they require the logos to be downloaded
+# This also applies to the specific font used
 
 #####################################################
 #%%
@@ -27,36 +24,36 @@ import matplotlib.pyplot as plt
 from mplsoccer import PyPizza, add_image
 
 # Load event data
-df_eng = pd.read_json("../data/wyscout/events/events_England.json",
+df_eng = pd.read_json("events_England.json",
                      encoding = "unicode-escape")
-df_ita = pd.read_json("../data/wyscout/events/events_Italy.json",
+df_ita = pd.read_json("events_Italy.json",
                      encoding = "unicode-escape")
-df_fra = pd.read_json("../data/wyscout/events/events_France.json",
+df_fra = pd.read_json("events_France.json",
                      encoding = "unicode-escape")
-df_ger = pd.read_json("../data/wyscout/events/events_Germany.json",
+df_ger = pd.read_json("events_Germany.json",
                      encoding = "unicode-escape")
-df_spa = pd.read_json("../data/wyscout/events/events_Spain.json",
+df_spa = pd.read_json("events_Spain.json",
                      encoding = "unicode-escape")
 df_pl = pd.concat([df_eng, df_ita, df_fra, df_ger, df_spa])
 
 # Load player data
-df_players = pd.read_json("../data/wyscout/players.json",
+df_players = pd.read_json("players.json",
                           encoding="unicode-escape")
 
 # Load minute data
-with open("../data/minutes_played/minutes_played_per_game_England.json") as f:
+with open("minutes_played_per_game_England.json") as f:
     minutes_per_game_england = json.load(f)
 df_minutes_per_game_england = pd.DataFrame(minutes_per_game_england)
-with open("../data/minutes_played/minutes_played_per_game_France.json") as f:
+with open("minutes_played_per_game_France.json") as f:
     minutes_per_game_france = json.load(f)
 df_minutes_per_game_france = pd.DataFrame(minutes_per_game_france)
-with open("../data/minutes_played/minutes_played_per_game_Germany.json") as f:
+with open("minutes_played_per_game_Germany.json") as f:
     minutes_per_game_germany = json.load(f)
 df_minutes_per_game_germany = pd.DataFrame(minutes_per_game_germany)
-with open("../data/minutes_played/minutes_played_per_game_Italy.json") as f:
+with open("minutes_played_per_game_Italy.json") as f:
     minutes_per_game_italy = json.load(f)
 df_minutes_per_game_italy = pd.DataFrame(minutes_per_game_italy)
-with open("../data/minutes_played/minutes_played_per_game_Spain.json") as f:
+with open("minutes_played_per_game_Spain.json") as f:
     minutes_per_game_spain = json.load(f)
 df_minutes_per_game_spain = pd.DataFrame(minutes_per_game_spain)
 
@@ -187,7 +184,7 @@ df_summary = (
 # filter minutes
 df_summary = df_minutes.merge(df_summary, how="left", on=["playerId"])
 df_summary = df_summary.fillna(0)
-df_summary = df_summary.loc[df_summary["minutesPlayed"] > 900]
+df_summary = df_summary.loc[df_summary["minutesPlayed"] > 400]
 
 # filter position
 defenders = df_players.loc[df_players.apply(lambda x: x.role["name"] == "Defender", axis=1)]
@@ -205,8 +202,8 @@ summary_per_90["true_tackle_win_rate"] = df_summary["true_tackle_win_rate"]
 
 #%%
 # Calculate percentiles
-player = "T. Kongolo"
-team = "Huddersfield Town"
+player = "S. Kolašinac"
+team = "Arsenal FC"
 df_player = summary_per_90.loc[summary_per_90["shortName"] == player]
 df_player = df_player[["interceptions_per90", "aerial_duels_per90",
                        "progressive_passes_per90", "def_to_mid_passes_per90",
@@ -227,10 +224,10 @@ names = ["Interceptions", "Air Duels Won",
          "True Tackles", "True Tackles\nWin Rate"]
 arr1 = np.asarray(percentiles)
 slice_colors = plt.cm.Reds(arr1 / 120)
-text_colors = ["white"]*6
+text_colors = ["k"]*6
 # set font
-mpl.rcParams["font.family"] = "Alegreya Sans"
-logo = Image.open(f"utils/{team}.png")
+# mpl.rcParams["font.family"] = "Alegreya Sans"
+# logo = Image.open(f"utils/{team}.png")
 
 # Setup radar chart
 baker = PyPizza(
@@ -243,13 +240,12 @@ baker = PyPizza(
 fig, ax = baker.make_pizza(
     percentiles,
     figsize = (10, 10),
-    param_location = 110, slice_colors = slice_colors,
+    param_location = 110, slice_colors=slice_colors,
     value_colors = text_colors, value_bck_colors=slice_colors,
     kwargs_slices = dict(edgecolor="k", zorder=2, linewidth=2, alpha=0.9),
     kwargs_params = dict(color="k", fontsize=16, va="center", fontweight="bold"),
     kwargs_values = dict(color="k", fontsize=16, zorder=3, fontweight="bold",
-        bbox=dict(edgecolor="k", boxstyle="round,pad=0.3", lw=2)
-        )
+        bbox=dict(edgecolor="k", boxstyle="round,pad=0.3", lw=2))
 )
 # set per 90 values
 texts = baker.get_value_texts()
@@ -267,12 +263,12 @@ fig.text(0.515, 0.965, "Top 5 Leagues - 2017/18  |  Defenders  |  >400 min. play
 # formatting
 fig.set_facecolor("#eee9e5")
 ax.set_facecolor("#eee9e5")
-# insert image
-ax_image = add_image(logo, fig,
-                     left=0.82, bottom=0.924,
-                     width=0.13, height=0.127)
-ax_image = add_image(logo, fig,
-                     left=0.11, bottom=0.924,
-                     width=0.13, height=0.127)
+# # insert image
+# ax_image = add_image(logo, fig,
+#                      left=0.82, bottom=0.924,
+#                      width=0.13, height=0.127)
+# ax_image = add_image(logo, fig,
+#                      left=0.11, bottom=0.924,
+#                      width=0.13, height=0.127)
 
-fig.savefig(f"output/{player}.png", bbox_inches="tight", dpi=300)
+fig.savefig(f"radar_{player}.png", bbox_inches="tight", dpi=300)
